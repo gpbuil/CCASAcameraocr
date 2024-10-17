@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
             showFileContents()
         }
 
+
         binding.sendFileButton.setOnClickListener {
             sendFileViaEmail()
         }
