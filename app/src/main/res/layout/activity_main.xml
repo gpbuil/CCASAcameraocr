@@ -15,6 +15,8 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" >
+
+
     </androidx.camera.view.PreviewView>
 
     <!-- Overlay View (optional) -->
@@ -34,7 +36,7 @@
         android:id="@+id/viewFileButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Ve arquivo"
+        android:text="Ver arquivo"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         android:layout_margin="16dp" />
@@ -68,5 +70,15 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_margin="16dp" />
+
+    <Button
+        android:id="@+id/torchButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Toggle Flashlight"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.5"/>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
