@@ -16,6 +16,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MaterialComponents.DayNight.DarkActionBar">
+        <activity android:name=".InputNumbersActivity" />
         <activity
             android:name=".MainActivity"
             android:screenOrientation="landscape"
