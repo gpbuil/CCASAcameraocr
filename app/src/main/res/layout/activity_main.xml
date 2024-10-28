@@ -15,12 +15,14 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" >
+
+
     </androidx.camera.view.PreviewView>
 
     <!-- Overlay View (optional) -->
     <View
         android:id="@+id/overlay"
-        android:layout_width="300dp"
+        android:layout_width="600dp"
         android:layout_height="125dp"
         android:background="@drawable/overlay_frame"
         android:clickable="false"
@@ -34,7 +36,7 @@
         android:id="@+id/viewFileButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="View File"
+        android:text="Ver arquivo"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         android:layout_margin="16dp" />
@@ -44,7 +46,7 @@
         android:id="@+id/resetFileButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Reset File"
+        android:text="Apaga Arquivo"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_margin="16dp" />
@@ -54,7 +56,7 @@
         android:id="@+id/sendFileButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Send File"
+        android:text="Envia Arquivo"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         android:layout_margin="16dp" />
@@ -64,9 +66,19 @@
         android:id="@+id/captureButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Capture"
+        android:text="Tira Foto"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_margin="16dp" />
+
+    <Button
+        android:id="@+id/torchButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Lanterna On/Off"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.5"/>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

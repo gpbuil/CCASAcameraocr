@@ -24,34 +24,71 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import android.content.Context
 import android.content.Intent
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.net.Uri
 import android.os.Environment
+import android.view.MotionEvent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var imageCapture: ImageCapture
     private lateinit var cameraExecutor: ExecutorService
+    private lateinit var cameraControl: androidx.camera.core.CameraControl
+    private var torchEnabled = false  // Boolean flag to track the torch state
+    private lateinit var receivedGroups: List<String>  // To store user-entered groups
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    // Define the activity result launcher for getting the result from InputNumbersActivity
+    private val inputNumbersLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val data = result.data
+            if (data != null) {
+                val group1 = data.getStringExtra("GROUP_1") ?: ""
+                val group2 = data.getStringExtra("GROUP_2") ?: ""
+                val group3 = data.getStringExtra("GROUP_3") ?: ""
+                val group4 = data.getStringExtra("GROUP_4") ?: ""
+                val group5 = data.getStringExtra("GROUP_5") ?: ""
+                val group6 = data.getStringExtra("GROUP_6") ?: ""
+                val group7 = data.getStringExtra("GROUP_7") ?: ""
+                val group8 = data.getStringExtra("GROUP_8") ?: ""
 
-        // Set up ViewBinding
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+                receivedGroups = listOf(group1, group2, group3, group4, group5, group6, group7, group8)
 
-        // Start the camera when the activity starts
-        startCamera()
+                // Log the received values
+                Log.d("MainActivity", "Received Groups: $group1, $group2, $group3, $group4, $group5, $group6, $group7, $group8")
 
+                // Now continue with your camera setup or any other processing
+                startCamera()
+                setUpTapToFocus()
+                setupButtons()
+
+
+                // Initialize cameraExecutor if needed
+                if (!::cameraExecutor.isInitialized) {
+                    cameraExecutor = Executors.newSingleThreadExecutor()
+                }
+            }
+        }
+    }
+
+    // Function to setup button click listeners
+    private fun setupButtons() {
         // Set click listener for the capture button
         binding.captureButton.setOnClickListener { takePhoto() }
 
-        // Initialize our background executor
-        cameraExecutor = Executors.newSingleThreadExecutor()
+        // Set click listener for the torch button (flashlight)
+        binding.torchButton.setOnClickListener {
+            toggleTorch()
+        }
 
         binding.viewFileButton.setOnClickListener {
             showFileContents()
@@ -65,33 +102,50 @@ class MainActivity : AppCompatActivity() {
             resetFile()
         }
     }
-    
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Show the dialog to ask if the user wants to input numbers
+        showInputNumbersDialog()
+
+        // Launch the InputNumbersActivity to input known numbers
+        //val intent = Intent(this, InputNumbersActivity::class.java)
+        //inputNumbersLauncher.launch(intent)  // Launch InputNumbersActivity and wait for result
+    }
+
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
         cameraProviderFuture.addListener({
-            // Used to bind the lifecycle of cameras to the lifecycle owner
             val cameraProvider = cameraProviderFuture.get()
 
-            // Preview use case
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(binding.cameraPreview.surfaceProvider)
-            }
+            // Setup Preview Use Case
+            val preview = Preview.Builder()
+                .setTargetRotation(windowManager.defaultDisplay.rotation)  // Handle screen rotation
+                .build().also {
+                    it.setSurfaceProvider(binding?.cameraPreview?.surfaceProvider)
+                }
 
-            // Image capture use case
-            imageCapture = ImageCapture.Builder().build()
+            // Setup ImageCapture Use Case with CAPTURE_MODE_MINIMIZE_LATENCY for speed
+            imageCapture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)  // Minimize latency mode
+                .setTargetRotation(windowManager.defaultDisplay.rotation)  // Handle screen rotation
+                .build()
 
             // Select back camera as default
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
             try {
-                // Unbind use cases before rebinding
-                cameraProvider.unbindAll()
-
-                // Bind use cases to camera
-                cameraProvider.bindToLifecycle(
+                // Bind the camera to lifecycle
+                val camera = cameraProvider.bindToLifecycle(
                     this, cameraSelector, preview, imageCapture
                 )
+
+                // Initialize cameraControl for tap-to-focus
+                cameraControl = camera.cameraControl
 
             } catch (exc: Exception) {
                 Log.e("CameraXApp", "Use case binding failed", exc)
@@ -100,6 +154,26 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    private fun setUpTapToFocus() {
+        binding.cameraPreview.setOnTouchListener { view, event ->
+            if (event.action == MotionEvent.ACTION_DOWN) {
+                // Perform focus metering action
+                val factory = binding.cameraPreview.meteringPointFactory
+                val point = factory.createPoint(event.x, event.y)
+
+                val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF).build()
+
+                cameraControl.startFocusAndMetering(action)
+
+                // Call performClick for accessibility
+                view.performClick()
+
+                true
+            } else {
+                false
+            }
+        }
+    }
     // Take the photo and crop it to the overlay size
     private fun takePhoto() {
         val imageCapture = imageCapture ?: run {
@@ -118,7 +192,7 @@ class MainActivity : AppCompatActivity() {
                     // Check if the image is in landscape (width > height)
                     if (bitmap.width > bitmap.height) {
                         // Rotate the image by 90 degrees to make it portrait
-                        bitmap = rotateBitmap(bitmap, 90f)
+                        bitmap = rotateBitmap(bitmap, 0f)
                         Log.d("DebugRotation", "Rotated the image by 90 degrees")
                     }
 
@@ -128,11 +202,13 @@ class MainActivity : AppCompatActivity() {
                     // Crop the image to the overlay area
                     val croppedBitmap = cropBitmapToOverlay(bitmap, overlayRect)
 
-                    // Save the cropped image to the gallery
-                    saveBitmapToGallery(croppedBitmap)
+                    // Enhance contrast of the cropped bitmap
+                    val contrastEnhancedBitmap = enhanceContrast(croppedBitmap)
+
+                    saveBitmapToFile(contrastEnhancedBitmap, "contrastEnhancedImage")
 
                     // Perform OCR on the cropped image
-                    performOCR(croppedBitmap)
+                    performOCR(contrastEnhancedBitmap)
 
                     // Play shutter sound
                     playShutterSound()
@@ -150,12 +226,10 @@ class MainActivity : AppCompatActivity() {
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-
-
     private fun getOverlayRectForImage(originalBitmap: Bitmap): Rect {
         val overlay = binding.overlay
 
-        // Get the overlay position and size relative to the screen
+        // Get the overlay's position and size relative to the screen
         val location = IntArray(2)
         overlay.getLocationOnScreen(location)
         val overlayX = location[0]
@@ -163,51 +237,24 @@ class MainActivity : AppCompatActivity() {
         val overlayWidth = overlay.width
         val overlayHeight = overlay.height
 
-        // Get the dimensions of the PreviewView (the camera preview)
+        // Get the dimensions of the camera preview and image
         val previewWidth = binding.cameraPreview.width
         val previewHeight = binding.cameraPreview.height
+        val imageWidth = originalBitmap.width
+        val imageHeight = originalBitmap.height
 
-        // Get the dimensions of the captured image (bitmap)
-        var imageWidth = originalBitmap.width
-        var imageHeight = originalBitmap.height
-
-        // If the image is captured in landscape mode but the preview is in portrait, swap width and height
-        if (imageWidth > imageHeight) {
-            Log.d("DebugOrientation", "Swapping image width and height for portrait mode")
-            val temp = imageWidth
-            imageWidth = imageHeight
-            imageHeight = temp
-        }
-
-        // Log the adjusted image dimensions
-        Log.d("DebugImage", "Image Width: $imageWidth, Height: $imageHeight")
-
-        // Calculate the scaling factor between the PreviewView and the captured image
+        // Scaling factors based on landscape dimensions
         val scaleX = imageWidth.toFloat() / previewWidth
         val scaleY = imageHeight.toFloat() / previewHeight
 
-        // Log the scaling factors
-        Log.d("DebugScale", "Scale X: $scaleX, Scale Y: $scaleY")
-
-        // Scale the overlay coordinates to match the image size
+        // Scale the overlay coordinates to match the captured image
         val scaledX = (overlayX * scaleX).toInt()
         val scaledY = (overlayY * scaleY).toInt()
         val scaledWidth = (overlayWidth * scaleX).toInt()
         val scaledHeight = (overlayHeight * scaleY).toInt()
 
-        // Log the scaled overlay values
-        Log.d("DebugScaledOverlay", "Scaled X: $scaledX, Y: $scaledY, Width: $scaledWidth, Height: $scaledHeight")
-
-        // Ensure that the crop rectangle stays within the image bounds
-        val croppedX = scaledX.coerceAtLeast(0)  // Make sure it's >= 0
-        val croppedY = scaledY.coerceAtLeast(0)  // Make sure it's >= 0
-        val croppedWidth = (croppedX + scaledWidth).coerceAtMost(imageWidth) - croppedX
-        val croppedHeight = (croppedY + scaledHeight).coerceAtMost(imageHeight) - croppedY
-
-        // Log the final cropped rectangle
-        Log.d("DebugCroppedRect", "Cropped X: $croppedX, Y: $croppedY, Width: $croppedWidth, Height: $croppedHeight")
-
-        return Rect(croppedX, croppedY, croppedX + croppedWidth, croppedY + croppedHeight)
+        // Return the cropping rectangle based on scaled dimensions
+        return Rect(scaledX, scaledY, scaledX + scaledWidth, scaledY + scaledHeight)
     }
 
     // Helper function to convert ImageProxy to Bitmap
@@ -229,27 +276,45 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    // Helper function to save the cropped bitmap to the gallery
-    private fun saveBitmapToGallery(bitmap: Bitmap) {
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, "Cropped_IMG_${System.currentTimeMillis()}.jpg")
-            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CameraWithOCR")
+    // Helper function to save images to the gallery
+    private fun saveBitmapToFile(bitmap: Bitmap, fileName: String): File {
+        // Create a directory in the external storage (or use any other directory)
+        val directory = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+        val file = File(directory, "$fileName.jpg")
+
+        try {
+            // Create output stream to write the bitmap data to a file
+            val outputStream = FileOutputStream(file)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)  // 100 = best quality
+            outputStream.flush()
+            outputStream.close()
+
+            Log.d("CameraXApp", "Bitmap saved to: ${file.absolutePath}")
+        } catch (e: IOException) {
+            e.printStackTrace()
+            Log.e("CameraXApp", "Failed to save bitmap: ${e.message}")
         }
 
-        val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-        uri?.let {
-            val outputStream = contentResolver.openOutputStream(it)
-            outputStream?.use { stream ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-                Log.d("CameraXApp", "Cropped photo saved to gallery!")
-                runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Cropped photo saved to gallery!", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
+        return file
     }
 
+    private fun enhanceContrast(bitmap: Bitmap): Bitmap {
+        val contrast = 0.8  // Adjust contrast level as needed
+        val bitmapConfig = bitmap.config
+        val contrastBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmapConfig)
+
+        val paint = Paint()
+        val contrastMatrix = ColorMatrix().apply {
+            setScale(contrast.toFloat(), contrast.toFloat(), contrast.toFloat(), 1.0f)
+        }
+        val colorFilter = ColorMatrixColorFilter(contrastMatrix)
+        paint.colorFilter = colorFilter
+
+        val canvas = Canvas(contrastBitmap)
+        canvas.drawBitmap(bitmap, 0f, 0f, paint)
+
+        return contrastBitmap
+    }
 
     // Play a camera shutter sound
     private fun playShutterSound() {
@@ -261,35 +326,78 @@ class MainActivity : AppCompatActivity() {
     private fun performOCR(croppedBitmap: Bitmap) {
         val image = InputImage.fromBitmap(croppedBitmap, 0)
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        Log.d("performOCR", "Starting OCR process on cropped bitmap")
 
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
-                val detectedNumbers = extractNumbers(visionText.text)
-                Log.d("OCRResult", "Detected Numbers: $detectedNumbers")
-                if (detectedNumbers.isNotEmpty()) {
-                    appendToFile(detectedNumbers)
+                Log.d("performOCR", "OCR Success")
+                val ocrText = visionText.text  // Extract the recognized text as a string
+
+                if (ocrText.isNullOrEmpty()) {
+                    Log.e("performOCR", "OCR text is empty or null")
+                    return@addOnSuccessListener
                 }
+
+                // Split OCR result into chunks of 4 characters
+                val detectedGroups = ocrText.filter { it.isDigit() }  // Ensure we only extract digits
+                    .chunked(4)  // Split into chunks of 4 digits
+
+                if (detectedGroups.size < 11) {
+                    Log.e("performOCR", "Insufficient groups detected from OCR")
+                    return@addOnSuccessListener
+                }
+
+                // Extract the first 8 groups and the last 3 groups from OCR
+                val firstEightGroupsFromOCR = detectedGroups.take(8).joinToString(" ")
+                val lastThreeGroupsFromOCR = detectedGroups.takeLast(3).joinToString(" ")
+                Log.d("OCRGroups", "First eight groups from OCR: $firstEightGroupsFromOCR")
+                Log.d("OCRGroups", "Last three groups from OCR: $lastThreeGroupsFromOCR")
+
+                // Use the received groups if they were entered by the user; otherwise, fall back to the OCR result
+                val finalFirstEightGroups = if (receivedGroups.all { it.isEmpty() }) {
+                    firstEightGroupsFromOCR  // If "No" was chosen, use the OCR groups
+                } else {
+                    receivedGroups.joinToString(" ")  // Use the user-entered groups
+                }
+
+                // Combine the user-entered first 8 groups with OCR-detected last 3 groups
+                val finalResult = "$finalFirstEightGroups $lastThreeGroupsFromOCR"
+
+                // Validate the length of finalResult (44 characters: 11 groups of 4 digits plus spaces)
+                if (finalResult.replace(" ", "").length != 44) {
+                    Log.e("OCRValidation", "Invalid number of digits detected. Expected 44, but got ${finalResult.replace(" ", "").length}.")
+                    Toast.makeText(this, "Não foi possível ler todos os números: $finalResult", Toast.LENGTH_SHORT).show()
+                    return@addOnSuccessListener  // Do not append to the file if validation fails
+                }
+
+                Log.d("OCRResult", "Final Result: $finalResult")
+                appendToFile(finalResult)  // Append the result to the file
             }
             .addOnFailureListener { e ->
                 Log.e("OCRFailure", "Text recognition failed: ${e.message}")
             }
     }
 
+    // Modify extractNumbers to return the last three groups
+    private fun extractNumbers(text: String): DetectedGroups {
+        val regex = Regex("\\d{4}")  // Extract groups of 4 digits
+        val numbers = regex.findAll(text).map { it.value }.toList()
 
-    // Function to extract numbers from the OCR result
-    private fun extractNumbers(text: String): String {
-        // Use a regular expression to match only digits (numbers)
-        val regex = Regex("\\d+")
-
-        // Extract numbers, remove spaces, and join the result into a single string
-        val numbers = regex.findAll(text)
-            .map { it.value }  // Extract the matched number from MatchResult
-            .joinToString("")  // Join all numbers without any space separator
-
-        return numbers
+        return if (numbers.size >= 11) {
+            DetectedGroups(
+                firstEightGroups = numbers.subList(0, 8).joinToString(" "),
+                lastThreeGroups = numbers.subList(8, 11).joinToString(" ")
+            )
+        } else {
+            DetectedGroups("", "")  // Handle case where OCR fails
+        }
     }
 
-
+    // Data class to hold detected groups
+    data class DetectedGroups(
+        val firstEightGroups: String,
+        val lastThreeGroups: String
+    )
 
     // Function to append recognized numbers to a file in the Documents directory
     private fun appendToFile(numbers: String) {
@@ -373,9 +481,51 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Function to toggle the torch (flashlight)
+    private fun toggleTorch() {
+        if (::cameraControl.isInitialized) {
+            torchEnabled = !torchEnabled
+            cameraControl.enableTorch(torchEnabled)  // Toggle the torch state
+            Toast.makeText(this, if (torchEnabled) "Flashlight ON" else "Flashlight OFF", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showInputNumbersDialog() {
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle("Entrada de dados")
+        builder.setMessage("Quer entrar com os 8 primeiros grupos manualmente?")
+
+        // Set Yes button
+        builder.setPositiveButton("Sim") { dialog, _ ->
+            // Launch InputNumbersActivity if user wants to input numbers
+            val intent = Intent(this, InputNumbersActivity::class.java)
+            inputNumbersLauncher.launch(intent)
+            dialog.dismiss()
+        }
+
+        // Set No button
+        builder.setNegativeButton("Não") { dialog, _ ->
+
+            // Initialize receivedGroups with default empty strings
+            receivedGroups = listOf("", "", "", "", "", "", "", "")
+
+            // Directly start the camera without input
+            startCamera()
+            setUpTapToFocus()
+            setupButtons()  // Make sure to setup the button click listeners here as well
+            dialog.dismiss()
+        }
+
+        // Show the dialog
+        builder.create().show()
+    }
 
     override fun onDestroy() {
         super.onDestroy()
-        cameraExecutor.shutdown()
+
+        // Check if cameraExecutor is initialized before attempting to shut it down
+        if (::cameraExecutor.isInitialized) {
+            cameraExecutor.shutdown()
+        }
     }
 }
